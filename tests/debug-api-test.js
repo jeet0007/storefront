@@ -31,7 +31,7 @@ function logResponse(stepName, response) {
   console.log(`\n=== ${stepName} ===`);
   console.log(`Status: ${response.status}`);
   console.log(`Headers: ${JSON.stringify(response.headers, null, 2)}`);
-  console.log(`Body (first 500 chars): ${response?.body?.substring(0, 500)}`);
+  console.log(`Body: ${response?.body}`);
   console.log(`Body length: ${response?.body?.length}`);
   console.log(`ENV - BASE_URL: ${BASE_URL}`);
   console.log(`ENV - APP_ID: ${APP_ID}`);
@@ -245,9 +245,11 @@ export default function () {
     if (response.status === 200) {
       try {
         const responseBody = JSON.parse(response.body);
+        logResponse("Parsed GetCart Response", responseBody);
         paymentProcessorId =
-          responseBody.paymentProcessorId || "default-processor-id";
-        eventId = responseBody.eventId || EVENT_ID;
+          responseBody.event?.payment?.paymentProcessor ||
+          "default-processor-id";
+        eventId = responseBody.event?._id || EVENT_ID;
         console.log(`✅ Parsed paymentProcessorId: ${paymentProcessorId}`);
         console.log(`✅ Parsed eventId: ${eventId}`);
       } catch (e) {
@@ -256,5 +258,177 @@ export default function () {
     }
 
     sleep(2);
+
+    // Step 6: PaymentProcessorRequest (setup)
+    if (paymentProcessorId && paymentProcessorId !== "default-processor-id") {
+      console.log("Starting Step 6: PaymentProcessorRequest (setup)");
+      response = http.post(
+        `${BASE_URL}/sdk/request`,
+        JSON.stringify({
+          requestType: "PaymentProcessorRequest",
+          body: {
+            paymentProcessorId: paymentProcessorId,
+            requestType: "setup",
+            body: {
+              paymentProcessorId: paymentProcessorId,
+              eventId: eventId,
+            },
+          },
+        }),
+        { headers }
+      );
+
+      logResponse("Step 6 - PaymentProcessorRequest Setup", response);
+      sleep(1);
+    }
+
+    // Step 7: Start Payment
+    if (shoppingCartId) {
+      console.log("Starting Step 7: Start Payment");
+      response = http.post(
+        `${BASE_URL}/sdk/request`,
+        JSON.stringify({
+          requestType: "StartPayment",
+          body: shoppingCartId,
+        }),
+        { headers }
+      );
+
+      logResponse("Step 7 - StartPayment", response);
+      sleep(2);
+    }
+
+    // Step 8: Get Cart with full population
+    if (shoppingCartId) {
+      console.log("Starting Step 8: Get Cart (Full Population)");
+      response = http.post(
+        `${BASE_URL}/sdk/request`,
+        JSON.stringify({
+          requestType: "GetCart",
+          body: {
+            shoppingCartId: shoppingCartId,
+            populate: [
+              { path: "items.ticket" },
+              { path: "items.addOn" },
+              { path: "event", populate: [{ path: "venue" }] },
+              { path: "taxes" },
+              { path: "fees" },
+              { path: "customer" },
+              { path: "promoCodes" },
+              { path: "purchaserAnswers.question" },
+            ],
+          },
+        }),
+        { headers }
+      );
+
+      logResponse("Step 8 - GetCart Full", response);
+      sleep(1);
+    }
+
+    // Step 9: Confirm Payment
+    if (
+      shoppingCartId &&
+      paymentProcessorId &&
+      paymentProcessorId !== "default-processor-id"
+    ) {
+      console.log("Starting Step 9: Confirm Payment");
+      response = http.post(
+        `${BASE_URL}/sdk/request`,
+        JSON.stringify({
+          requestType: "PaymentProcessorRequest",
+          body: {
+            paymentProcessorId: paymentProcessorId,
+            requestType: "confirmPayment",
+            body: {
+              shoppingCartId: shoppingCartId,
+              method: "Card",
+              applicationParameters: {
+                channel: "StoreFront",
+                business: "Seated",
+              },
+              tokenResult: {
+                token: "cnon:card-nonce-ok",
+                details: {
+                  billing: {
+                    postalCode: "11111",
+                  },
+                  card: {
+                    brand: "VISA",
+                    expMonth: 11,
+                    expYear: 2027,
+                    last4: "1111",
+                  },
+                  method: "Card",
+                },
+              },
+              squareItemizationSettings: [],
+            },
+          },
+        }),
+        { headers }
+      );
+
+      logResponse("Step 9 - ConfirmPayment", response);
+      sleep(2);
+    }
+
+    // Step 10: Get Order Number
+    if (shoppingCartId) {
+      console.log("Starting Step 10: Get Order Number");
+      response = http.post(
+        `${BASE_URL}/sdk/request`,
+        JSON.stringify({
+          body: {
+            shoppingCartId: shoppingCartId,
+            includeCart: false,
+          },
+          requestType: "GetCartInfo",
+        }),
+        { headers }
+      );
+
+      logResponse("Step 10 - GetOrderNo", response);
+
+      if (response.status === 200) {
+        try {
+          const cartInfo = JSON.parse(response.body);
+          orderNo = cartInfo.orderNumber;
+          console.log(`✅ Parsed order number: ${orderNo}`);
+        } catch (e) {
+          console.log(`❌ JSON Parse Error: ${e.message}`);
+        }
+      }
+      sleep(1);
+    }
+
+    // Step 11: Get QR Code
+    if (orderNo) {
+      console.log("Starting Step 11: Get QR Code");
+      response = http.post(
+        `${BASE_URL}/sdk/request`,
+        JSON.stringify({
+          body: orderNo,
+          requestType: "GetPurchaseCodesFromOrderNumber",
+        }),
+        { headers }
+      );
+
+      logResponse("Step 11 - GetQR", response);
+
+      if (response.status === 200) {
+        try {
+          const qrData = JSON.parse(response.body);
+          const qrCode = qrData.data?.[0]?.originalCode;
+          console.log(`✅ Parsed QR code: ${qrCode}`);
+        } catch (e) {
+          console.log(`❌ JSON Parse Error: ${e.message}`);
+        }
+      }
+      sleep(1);
+    }
+
+    console.log("🎉 Complete purchase flow debug completed!");
+    return;
   }
 }
