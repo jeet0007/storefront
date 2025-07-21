@@ -1,0 +1,62 @@
+{
+  "scenarios": {
+    "smoke": {
+      "description": "Basic smoke test to verify API availability",
+      "executor": "constant-vus",
+      "vus": 1,
+      "duration": "30s",
+      "thresholds": {
+        "errors": ["rate<0.01"],
+        "http_req_duration": ["p(95)<1000"]
+      }
+    },
+    "load": {
+      "description": "Standard load test for purchase flow",
+      "executor": "ramping-vus",
+      "startVUs": 0,
+      "stages": [
+        { "duration": "2m", "target": 5 },
+        { "duration": "5m", "target": 10 },
+        { "duration": "2m", "target": 0 }
+      ],
+      "thresholds": {
+        "errors": ["rate<0.05"],
+        "http_req_duration": ["p(95)<2000"]
+      }
+    },
+    "stress": {
+      "description": "Stress test to find system limits",
+      "executor": "ramping-vus",
+      "startVUs": 0,
+      "stages": [
+        { "duration": "2m", "target": 10 },
+        { "duration": "5m", "target": 50 },
+        { "duration": "10m", "target": 100 },
+        { "duration": "5m", "target": 100 },
+        { "duration": "5m", "target": 0 }
+      ],
+      "thresholds": {
+        "errors": ["rate<0.1"],
+        "http_req_duration": ["p(95)<5000"]
+      }
+    },
+    "spike": {
+      "description": "Spike test for sudden traffic increases",
+      "executor": "ramping-vus",
+      "startVUs": 0,
+      "stages": [
+        { "duration": "1m", "target": 5 },
+        { "duration": "30s", "target": 100 },
+        { "duration": "1m", "target": 100 },
+        { "duration": "30s", "target": 5 },
+        { "duration": "1m", "target": 0 }
+      ],
+      "thresholds": {
+        "errors": ["rate<0.2"],
+        "http_req_duration": ["p(95)<10000"]
+      }
+    }
+  },
+  "summaryTrendStats": ["avg", "min", "med", "max", "p(90)", "p(95)", "p(99)", "count"],
+  "summaryTimeUnit": "ms"
+}

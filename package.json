@@ -1,0 +1,18 @@
+{
+  "name": "storefront-load-tests",
+  "version": "1.0.0",
+  "description": "K6 load tests for storefront application",
+  "scripts": {
+    "test": "k6 run tests/basic-load-test.js",
+    "test:smoke": "k6 run tests/smoke-test.js",
+    "test:load": "k6 run tests/load-test.js",
+    "test:stress": "k6 run tests/stress-test.js",
+    "test:spike": "k6 run tests/spike-test.js"
+  },
+  "devDependencies": {
+    "k6": "^0.52.0"
+  },
+  "keywords": ["k6", "load-testing", "performance", "storefront"],
+  "author": "",
+  "license": "MIT"
+}
