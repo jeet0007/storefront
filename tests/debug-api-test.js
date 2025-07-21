@@ -17,7 +17,8 @@ const APP_CHANNEL_SF = __ENV.APP_CHANNEL_SF || "StoreFront";
 const APP_BUSINESS = __ENV.APP_BUSINESS || "Seated";
 const EVENT_ID = __ENV.EVENT_ID || "6847fc2b272f1a48fbb04154";
 const SEATS_IO_KEY =
-  __ENV.SEATS_IO_KEY || "ODExOTJkMTgtNmUxMy00NzUwLTliOWEtZTRhMzVmZDdiYjczOg==";
+  __ENV.SEATS_IO_KEY || "NjJkMjhlYmYtMjJjMS00OWNlLTg4MWMtMjRhYzcwYjc4MWExOg==";
+const SEAT_IO_HOLD_TOKEN = __ENV.SEAT_IO_HOLD_TOKEN || "pWA93eh3nJ";
 
 const headers = {
   "Content-Type": "application/json",
@@ -30,17 +31,82 @@ function logResponse(stepName, response) {
   console.log(`\n=== ${stepName} ===`);
   console.log(`Status: ${response.status}`);
   console.log(`Headers: ${JSON.stringify(response.headers, null, 2)}`);
-  console.log(`Body (first 500 chars): ${response.body.substring(0, 500)}`);
-  console.log(`Body length: ${response.body.length}`);
+  console.log(`Body (first 500 chars): ${response?.body?.substring(0, 500)}`);
+  console.log(`Body length: ${response?.body?.length}`);
+  console.log(`ENV - BASE_URL: ${BASE_URL}`);
+  console.log(`ENV - APP_ID: ${APP_ID}`);
+  console.log(`ENV - APP_CHANNEL_SF: ${APP_CHANNEL_SF}`);
+  console.log(`ENV - APP_BUSINESS: ${APP_BUSINESS}`);
+  console.log(`ENV - EVENT_ID: ${EVENT_ID}`);
+  console.log(`ENV - SEATS_IO_KEY: ${SEATS_IO_KEY}`);
+  console.log(`ENV - SEAT_IO_HOLD_TOKEN: ${SEAT_IO_HOLD_TOKEN}`);
   console.log("================\n");
 }
 
 export default function () {
-  let seatsIoWorkspaceId, shoppingCartId, paymentProcessorId, eventId, orderNo;
+  let seatsIoWorkspaceId,
+    shoppingCartId,
+    paymentProcessorId,
+    eventId,
+    orderNo,
+    holdToken;
+
+  // Step 0a: Create Hold Token from seats.io
+  console.log("Starting Step 0a: Create Hold Token");
+  let response = http.post("https://api-na.seatsio.net/hold-tokens", null, {
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Basic ${SEATS_IO_KEY}`,
+    },
+  });
+
+  logResponse("Step 0a - Create Hold Token", response);
+
+  if (response.status === 201 || response.status === 200) {
+    const tokenData = JSON.parse(response.body);
+    holdToken = tokenData.holdToken;
+    console.log(`✅ Created holdToken: ${holdToken}`);
+  } else {
+    console.log(`❌ Step 0a failed with status ${response.status}`);
+    return;
+  }
+
+  sleep(0.5);
+
+  // Step 0b: Hold Seat using the token
+  console.log("Starting Step 0b: Hold Seat");
+  response = http.post(
+    `https://api-na.seatsio.net/events/${EVENT_ID}/actions/hold`,
+    JSON.stringify({
+      holdToken: holdToken,
+      objects: [
+        {
+          objectId: "107 V",
+          ticketType: "68481b94861e9c995183b3ed",
+        },
+      ],
+    }),
+    {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Basic ${SEATS_IO_KEY}`,
+      },
+    }
+  );
+
+  logResponse("Step 0b - Hold Seat", response);
+
+  if (response.status !== 204) {
+    console.log(`❌ Step 0b failed with status ${response.status}`);
+    return;
+  }
+
+  console.log(`✅ Seat held successfully with token: ${holdToken}`);
+  sleep(1);
 
   // Step 1: Get SeatsIo Workspace
   console.log("Starting Step 1: Get SeatsIo Workspace");
-  let response = http.post(
+  response = http.post(
     `${BASE_URL}/sdk/request`,
     JSON.stringify({
       body: null,
@@ -53,74 +119,63 @@ export default function () {
 
   if (response.status === 200) {
     try {
-      const responseBody = JSON.parse(response.body);
-      seatsIoWorkspaceId = responseBody.uuid || responseBody.id;
-      console.log(`✅ Parsed seatsIoWorkspaceId: ${seatsIoWorkspaceId}`);
+      seatsIoWorkspaceId = response.body.trim();
     } catch (e) {
       console.log(`❌ JSON Parse Error: ${e.message}`);
       console.log(`Raw response: ${response.body}`);
     }
-  }
-
-  sleep(1);
-
-  // Stop here if Step 1 failed - no point continuing
-  if (response.status !== 200) {
-    console.log("❌ Step 1 failed - stopping test");
+  } else {
+    console.log(`❌ Step 1 failed with status ${response.status}`);
     return;
   }
 
+  console.log(`✅ Parsed seatsIoWorkspaceId: ${seatsIoWorkspaceId}`);
+  sleep(1);
+
   // Step 2: Create Seated Shopping Cart (only if Step 1 succeeded)
-  if (response.status === 200) {
-    console.log("Starting Step 2: Create Seated Shopping Cart");
-    response = http.post(
-      `${BASE_URL}/sdk/request`,
-      JSON.stringify({
-        requestType: "CreateSeatedShoppingCart",
-        body: {
-          event: EVENT_ID,
-          seats: [
-            {
-              label: "107 V",
-              displayLabel: "107 V",
-              holdToken: SEATS_IO_KEY,
-              selectedTicketType: "68481b94861e9c995183b3ed",
-              objectType: "GeneralAdmissionArea",
-              category: {
-                label: "VIP Zone",
-                key: "5",
-              },
+  response = http.post(
+    `${BASE_URL}/sdk/request`,
+    JSON.stringify({
+      requestType: "CreateSeatedShoppingCart",
+      body: {
+        event: EVENT_ID,
+        seats: [
+          {
+            label: "107 V",
+            displayLabel: "107 V",
+            holdToken: holdToken,
+            selectedTicketType: "68481b94861e9c995183b3ed",
+            objectType: "GeneralAdmissionArea",
+            category: {
+              label: "VIP Zone",
+              key: "5",
             },
-          ],
-          applicationParameters: {
-            channel: APP_CHANNEL_SF,
-            business: APP_BUSINESS,
           },
+        ],
+        applicationParameters: {
+          channel: APP_CHANNEL_SF,
+          business: APP_BUSINESS,
         },
-      }),
-      { headers }
-    );
+      },
+    }),
+    { headers }
+  );
 
-    logResponse("Step 2 - CreateSeatedShoppingCart", response);
+  logResponse("Step 2 - CreateSeatedShoppingCart", response);
 
-    if (response.status === 200) {
-      try {
-        const responseBody = JSON.parse(response.body);
-        shoppingCartId = responseBody.uuid || responseBody.id;
-        console.log(`✅ Parsed shoppingCartId: ${shoppingCartId}`);
-      } catch (e) {
-        console.log(`❌ JSON Parse Error: ${e.message}`);
-      }
+  if (response.status === 200) {
+    try {
+      shoppingCartId = response.body.trim();
+      console.log(`✅ Parsed shoppingCartId: ${shoppingCartId}`);
+    } catch (e) {
+      console.log(`❌ JSON Parse Error: ${e.message}`);
     }
-
-    sleep(1);
-
-    // Stop here if Step 2 failed - no point continuing
-    if (response.status !== 200) {
-      console.log("❌ Step 2 failed - stopping test");
-      return;
-    }
+  } else {
+    console.log(`❌ Step 2 failed with status ${response.status}`);
+    return;
   }
+
+  sleep(1);
 
   // Step 3: Agree User Purchase (only if Step 2 succeeded)
   if (shoppingCartId) {
